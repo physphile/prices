@@ -1,0 +1,9 @@
+.vscode
+
+server/node_modules
+server/package-lock.json
+server/build
+server/.env
+
+ui/node_modules
+ui/package-lock.json

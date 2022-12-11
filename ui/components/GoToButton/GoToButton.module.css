@@ -1,0 +1,14 @@
+.button {
+    padding: 4px 8px;
+    background: skyblue;
+    border-radius: 4px;
+    outline: none;
+    border: none;
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+
+.button:hover {
+    cursor: pointer;
+}
