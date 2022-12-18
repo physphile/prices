@@ -1,11 +1,10 @@
 import pg, { QueryArrayConfig } from 'pg';
 const { Client } = pg;
-import { Processor, ProcessorCluster, Satellite, Smartphone, VideoResolutions } from '../models/models.js';
-import { ALL, Query } from '../utils/Query.js';
-import { config } from './config.js';
+import { ResponseProcessor, ResponseSmartphone } from './types.js';
+import { Smartphone, Gnss, Processor, ProcessorCluster, VideoResolutions } from '../models/models.js';
 
 export class Api {
-    client = new Client(config);
+    client = new Client();
 
     async connect() {
         await this.client.connect();
@@ -16,86 +15,125 @@ export class Api {
         await this.client.end();
     }
 
-    async getSmartphones() {
-        const rows = await new Query(this.client).select(ALL).from('smartphones').get();
-        const smartphones = rows.map(async (row: Smartphone) => ({
+    async getSmartphones(): Promise<Smartphone[]> {
+        const { rows }: { rows: ResponseSmartphone[] } = await this.client.query(`
+            SELECT smartphone_id as id, vendor, model, width, height, thick, weight, resistance, display_type,
+                   diagonal, resolution_horizontal, resolution_vertical, photos,
+                   processor_id, ram, rom FROM smartphones;
+        `);
+
+        console.log(rows);
+
+        const smartphones: Promise<Smartphone>[] = rows.map(async (row: ResponseSmartphone) => ({
             ...row,
-            photos: await this.getSmartphonePhotos(row.id),
-            processor: await this.getProcessor(row.processor_id),
+            processor: row.processor_id ? await this.getProcessor(row.processor_id) : null,
             gnss: await this.getGnss(row.id),
-            maxVideoCaptureResolutions: await this.getMaxVideoCaptureResolutions(row.id),
+            max_video_capture_resolutions: await this.getMaxVideoCaptureResolutions(row.id),
         }));
+
         return Promise.all(smartphones);
     }
 
-    async getSmartphone(id: number): Promise<Smartphone[]> {
-        const rows = await new Query(this.client).select(ALL).from('smartphones').where('id').equals(id).get();
-        const smartphone = {
+    async getSmartphone(smartphone_id: number): Promise<Smartphone> {
+        const { rows }: { rows: ResponseSmartphone[] } = await this.client.query(
+            `
+            SELECT smartphone_id as id, vendor, model, width, height, thick, weight, resistance, display_type,
+                   diagonal, resolution_horizontal, resolution_vertical, photos,
+                   processor_id, ram, rom FROM smartphones WHERE smartphone_id=$1;
+        `,
+            [smartphone_id],
+        );
+
+        const smartphone: Smartphone = {
             ...rows[0],
             processor: await this.getProcessor(rows[0].processor_id),
-            photos: await this.getSmartphonePhotos(id),
-            gnss: await this.getGnss(id),
-            max_video_capture_resolutions: await this.getMaxVideoCaptureResolutions(id),
+            gnss: await this.getGnss(smartphone_id),
+            max_video_capture_resolutions: await this.getMaxVideoCaptureResolutions(smartphone_id),
         };
-        return await smartphone;
+
+        return smartphone;
     }
 
-    async getSmartphonePhotos(smartphone_id: number): Promise<string[]> {
-        const rows = await new Query(this.client)
-            .select('src')
-            .from('photos')
-            .where('smartphone_id')
-            .equals(smartphone_id)
-            .get({ rowMode: 'array' });
-        return rows.reduce((acc: string[], row: string[]) => [...acc, row[0]], []);
-    }
-
-    async getProcessors(): Promise<Processor[]> {
-        const rows = await new Query(this.client).select(ALL).from('processors').get();
-
-        const processors = rows.map(async (row: Processor) => ({
-            ...row,
-            clusters: await this.getClusters(row.id),
-        }));
-
-        return Promise.all(processors);
-    }
-
-    async getProcessor(id: number): Promise<Processor> {
-        const rows = await new Query(this.client).select(ALL).from('processors').where('id').equals(id).get();
-        const processor = {
+    async getProcessor(processor_id: number): Promise<Processor> {
+        const { rows }: { rows: ResponseProcessor[] } = await this.client.query(
+            `SELECT vendor, model, processor_id as id FROM processors WHERE processor_id=$1`,
+            [processor_id],
+        );
+        const processor: Processor = {
             ...rows[0],
-            clusters: await this.getClusters(id),
+            clusters: await this.getClusters(processor_id),
         };
 
-        return await processor;
+        return processor;
     }
 
-    async getClusters(id: number): Promise<ProcessorCluster[]> {
-        const { rows } = await this.client.query(
+    async getClusters(processor_id: number): Promise<ProcessorCluster[]> {
+        const { rows }: { rows: ProcessorCluster[] } = await this.client.query(
             `SELECT  processor_cores.vendor, processor_cores.model, quantity, frequency FROM processors
-                 JOIN processor_clusters ON processors.id = processor_clusters.processor_id
-                 JOIN processor_cores ON processor_cores.id = processor_clusters.core_id WHERE processors.id=$1`,
-            [id],
+             JOIN processor_clusters ON processors.processor_id = processor_clusters.processor_id
+             JOIN processor_cores ON processor_cores.processor_core_id = processor_clusters.core_id 
+             WHERE processors.processor_id=$1`,
+            [processor_id],
         );
         return rows;
     }
 
-    async getGnss(id: number): Promise<Satellite[]> {
-        return await new Query(this.client)
-            .select('name', 'frequency')
-            .from('gnss')
-            .where('smartphone_id')
-            .equals(id)
-            .get({ rowMode: 'array' });
+    async getGnss(smartphone_id: number): Promise<Gnss[]> {
+        const query: QueryArrayConfig = {
+            text: `SELECT name, frequency FROM gnss WHERE smartphone_id=$1`,
+            values: [smartphone_id],
+            rowMode: 'array',
+        };
+        const { rows }: { rows: Gnss[] } = await this.client.query(query);
+        return rows;
     }
 
-    async getMaxVideoCaptureResolutions(id: number): Promise<VideoResolutions[]> {
-        return await new Query(this.client)
-            .select('horizontal', 'vertical', 'fps')
-            .from('max_video_capture_resolutions')
-            .where('smartphone_id')
-            .equals(id)
-            .get();
+    async getMaxVideoCaptureResolutions(smartphone_id: number): Promise<VideoResolutions[]> {
+        const { rows }: { rows: VideoResolutions[] } = await this.client.query(
+            `SELECT horizontal, vertical, fps FROM max_video_capture_resolutions WHERE smartphone_id=$1`,
+            [smartphone_id],
+        );
+        return rows;
+    }
+
+    async addSmartphone(smartphone: Partial<Smartphone>) {
+        const {
+            vendor,
+            model,
+            weight,
+            diagonal,
+            width,
+            height,
+            thick,
+            resistance,
+            display_type,
+            resolution_horizontal,
+            resolution_vertical,
+            processor_id,
+            ram,
+            rom,
+        } = smartphone;
+        await this.client.query(
+            `INSERT INTO smartphones (
+                vendor, model, weight, diagonal, width, height, thick, resistance, display_type, 
+                resolution_horizontal, resolution_vertical, processor_id, ram, rom
+             ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) on conflict do nothing`,
+            [
+                vendor,
+                model,
+                weight,
+                diagonal,
+                width,
+                height,
+                thick,
+                resistance,
+                display_type,
+                resolution_horizontal,
+                resolution_vertical,
+                processor_id,
+                ram,
+                rom,
+            ],
+        );
     }
 }

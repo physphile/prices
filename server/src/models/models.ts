@@ -1,10 +1,11 @@
-import { Vendors } from './vendors.js';
+import { Vendor } from "./vendors.js";
 
 export interface Smartphone {
     id: number;
-    vendor: Vendors;
+    version_code: string;
+    vendor: Vendor;
     model: string;
-    releaseDate: string;
+    release_date: string;
     weight: number;
     diagonal: number;
     version: string;
@@ -17,6 +18,11 @@ export interface Smartphone {
     resolution_vertical: number;
     processor_id: number;
     photos: string[];
+    ram: number;
+    rom: number;
+    gnss: Gnss[];
+    processor: Processor | null;
+    max_video_capture_resolutions: VideoResolutions[];
 }
 
 export interface ProcessorCluster {
@@ -31,24 +37,12 @@ export interface Processor {
     vendor: string;
     model: string;
     clusters: ProcessorCluster[];
-    maxVideoCaptureResolutions: VideoResolutions[];
-    gnss: Satellite[];
 }
 
-export type Satellite = [string, string];
+export type Gnss = [string, string];
 
 export interface VideoResolutions {
     horizontal: number;
     vertical: number;
     fps: number;
 }
-
-export type TableName = [
-    'smartphones',
-    'gnss',
-    'max_video_capture_resolutions',
-    'photos',
-    'processor_clusters',
-    'processor_cores',
-    'processors',
-][number];
